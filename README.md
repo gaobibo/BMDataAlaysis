@@ -1,6 +1,8 @@
 # BMDataAlaysis
 Tools:
 Hadoop, Hive, HBase, Phoniex, Python, RapidMinder
+
+
 Scope:
 ● The age distribution for male and female
 ● The average finishing time for different age group
