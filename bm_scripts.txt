@@ -1,0 +1,148 @@
+# Create table bm_by_year
+
+	CREATE TABLE bm_by_year (rowid INT,
+		bib STRING, lname STRING, fname STRING, age SMALLINT, gender STRING,
+		city STRING, state STRING, country STRING,
+		time_5k STRING, time_10k STRING, time_15k STRING, time_20k STRING, time_half STRING, time_25k STRING,
+		time_30k STRING, time_35k STRING, time_40k STRING, time_pace STRING, time_total STRING,
+		place_overall INT, place_gender INT, place_division INT)
+	PARTITIONED BY (year INT)
+	ROW FORMAT DELIMITED
+	FIELDS TERMINATED BY ','
+	STORED AS TEXTFILE;
+
+# Add the 5 partitions for each year
+
+	ALTER TABLE bm_by_year ADD PARTITION (year=2015) LOCATION '2015/';
+	ALTER TABLE bm_by_year ADD PARTITION (year=2016) LOCATION '2016/';
+	ALTER TABLE bm_by_year ADD PARTITION (year=2017) LOCATION '2017/';
+	ALTER TABLE bm_by_year ADD PARTITION (year=2018) LOCATION '2018/';
+	ALTER TABLE bm_by_year ADD PARTITION (year=2019) LOCATION '2019/';
+
+# Scope 1: Runner count of each year (per age group)
+
+	SELECT CAST(age /10 AS INT) AS age_group, year, COUNT(1) AS runnercount 
+	FROM bm_by_year 
+	GROUP BY CAST(age /10 AS INT), year; 
+
+# Scope 1: Pace of each year (per age group)
+
+	SELECT CAST(age /10 AS INT) AS age_group, year, CAST(AVG(UNIX_TIMESTAMP(time_pace,'HH:mm:ss') -  UNIX_TIMESTAMP('00:00:00','HH:mm:ss')) AS DECIMAL(10,2)) AS avgTime 
+	FROM bm_by_year 
+	GROUP BY CAST(age /10 AS INT), year;
+
+# Scope 1: Place of men and women (per finishing time)
+
+	SELECT CAST((place_gender / 100) AS INT) AS rank , gender, CAST( AVG(UNIX_TIMESTAMP(time_total,'HH:mm:ss') -  UNIX_TIMESTAMP('00:00:00','HH:mm:ss'))/3600 AS DECIMAL(10,2)) AS avgfinishtime
+	FROM bm_by_year 
+	WHERE year = '2016' 
+	GROUP BY CAST((place_gender / 100) AS INT), gender;
+
+# Scope 2: Finishing time of each year
+
+	SELECT CAST( UNIX_TIMESTAMP(a.time_total,'HH:mm:ss') -  UNIX_TIMESTAMP('00:00:00','HH:mm:ss') / 3600 AS DECIMAL(10,2)) AS avg_time,
+		   year, 
+		   gender
+	FROM bm_by_year 
+	GROUP BY  year, gender;
+
+# Scope 2: Finishing time of top countries
+
+	SELECT a.country, a.year, AVG(UNIX_TIMESTAMP(a.time_total,'HH:mm:ss') -  UNIX_TIMESTAMP('00:00:00','HH:mm:ss')) / 3600 AS avgTime
+	FROM bm_by_year a
+	WHERE a.country IN (
+		SELECT b.country FROM bm_by_year b
+		WHERE b.year = 2017 
+		GROUP BY b.country
+		HAVING COUNT(1) > 150 
+		LIMIT 10
+	) 
+	GROUP BY a.country, a.year;
+
+# Scope 2: Finishing time of runners who have run 5 years
+
+	SELECT a.fname, a.lname, a.year,  (UNIX_TIMESTAMP(a.time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss'))/3600 AS totaltime
+	FROM bm_by_year a
+	WHERE concat( a.fname," ", a.lname, a.year - a.age, a.city, a.state, a.country) IN (
+		SELECT concat( b.fname," ", b.lname, b.year - b.age, b.city, b.state, b.country) 
+		FROM bm_by_year b
+		WHERE b.place_gender < 1000
+		GROUP BY concat( b.fname," ", b.lname, b.year - b.age, b.city, b.state, b.country) 
+		HAVING COUNT(*)  > 4
+	)
+	ORDER BY a.fname, a.year
+	LIMIT 50;
+
+# Scope 3: Pace of top 10 runners
+
+			  SELECT 0.5 AS check_point,  place_overall, (UNIX_TIMESTAMP(time_5k,   'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00','HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE place_overall <= 10 AND year = 2019 SORT BY place_overall
+	UNION ALL SELECT 1.0 AS check_point,  place_overall, (UNIX_TIMESTAMP(time_10k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_5k,   'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE place_overall <= 10 AND year = 2019 SORT BY place_overall
+	UNION ALL SELECT 1.5 AS check_point,  place_overall, (UNIX_TIMESTAMP(time_15k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_10k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE place_overall <= 10 AND year = 2019 SORT BY place_overall
+	UNION ALL SELECT 2.0 AS check_point,  place_overall, (UNIX_TIMESTAMP(time_20k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_15k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE place_overall <= 10 AND year = 2019 SORT BY place_overall
+	UNION ALL SELECT 2.1 AS check_point,  place_overall, (UNIX_TIMESTAMP(time_half, 'HH:mm:ss') - UNIX_TIMESTAMP(time_20k,  'HH:mm:ss'))/1.1 AS pace_5k FROM bm_by_year WHERE place_overall <= 10 AND year = 2019 SORT BY place_overall
+	UNION ALL SELECT 2.5 AS check_point,  place_overall, (UNIX_TIMESTAMP(time_25k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_20k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE place_overall <= 10 AND year = 2019 SORT BY place_overall
+	UNION ALL SELECT 3.0 AS check_point,  place_overall, (UNIX_TIMESTAMP(time_30k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_25k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE place_overall <= 10 AND year = 2019 SORT BY place_overall
+	UNION ALL SELECT 3.5 AS check_point,  place_overall, (UNIX_TIMESTAMP(time_35k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_30k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE place_overall <= 10 AND year = 2019 SORT BY place_overall
+	UNION ALL SELECT 4.0 AS check_point,  place_overall, (UNIX_TIMESTAMP(time_40k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_35k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE place_overall <= 10 AND year = 2019 SORT BY place_overall
+	UNION ALL SELECT 4.2 AS check_point,  place_overall, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP(time_40k,  'HH:mm:ss'))/2.2 AS pace_5k FROM bm_by_year WHERE place_overall <= 10 AND year = 2019 SORT BY place_overall
+
+# Scope 3: Fast Starts = Slow Finishes
+
+	## Elite runner (Lawrence Cherono) of 2019
+
+			  SELECT 0.5 AS check_point, fname, (UNIX_TIMESTAMP(time_5k,   'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00','HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 1.0 AS check_point, fname, (UNIX_TIMESTAMP(time_10k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_5k,   'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 1.5 AS check_point, fname, (UNIX_TIMESTAMP(time_15k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_10k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 2.0 AS check_point, fname, (UNIX_TIMESTAMP(time_20k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_15k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 2.5 AS check_point, fname, (UNIX_TIMESTAMP(time_25k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_20k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 3.0 AS check_point, fname, (UNIX_TIMESTAMP(time_30k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_25k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 3.5 AS check_point, fname, (UNIX_TIMESTAMP(time_35k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_30k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 4.0 AS check_point, fname, (UNIX_TIMESTAMP(time_40k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_35k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 4.2 AS check_point, fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP(time_40k,  'HH:mm:ss')) / 2.2 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+
+	UNION ALL SELECT 0.5 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 1.0 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 1.5 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 2.0 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 2.5 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 3.0 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 3.5 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 4.0 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+	UNION ALL SELECT 4.2 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE place_overall = 1 AND year = '2019' 
+
+	## Average runner (Bibo Gao) of 2019
+
+			  SELECT 0.5 AS check_point, fname, (UNIX_TIMESTAMP(time_5k,   'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00','HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 1.0 AS check_point, fname, (UNIX_TIMESTAMP(time_10k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_5k,   'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 1.5 AS check_point, fname, (UNIX_TIMESTAMP(time_15k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_10k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 2.0 AS check_point, fname, (UNIX_TIMESTAMP(time_20k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_15k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 2.1 AS check_point, fname, (UNIX_TIMESTAMP(time_half, 'HH:mm:ss') - UNIX_TIMESTAMP(time_20k,  'HH:mm:ss')) / 1.1 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 2.5 AS check_point, fname, (UNIX_TIMESTAMP(time_25k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_20k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 3.0 AS check_point, fname, (UNIX_TIMESTAMP(time_30k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_25k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 3.5 AS check_point, fname, (UNIX_TIMESTAMP(time_35k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_30k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 4.0 AS check_point, fname, (UNIX_TIMESTAMP(time_40k,  'HH:mm:ss') - UNIX_TIMESTAMP(time_35k,  'HH:mm:ss')) / 5.0 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 4.2 AS check_point, fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP(time_40k,  'HH:mm:ss')) / 2.2 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+
+	UNION ALL SELECT 0.5 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 1.0 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 1.5 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 2.0 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 2.5 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 3.0 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 3.5 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 4.0 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+	UNION ALL SELECT 4.2 AS check_point, 'Avg' AS fname, (UNIX_TIMESTAMP(time_total,'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00',  'HH:mm:ss')) / 42.2 AS pace FROM bm_by_year WHERE fname = 'Bibo' AND year = '2019' 
+
+# Scope 3: My pace of each year
+
+			  SELECT 0.5 AS check_point,  year, (UNIX_TIMESTAMP(time_5k,    'HH:mm:ss') - UNIX_TIMESTAMP('00:00:00','HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE fname = 'Bibo' 
+	UNION ALL SELECT 1.0 AS check_point,  year, (UNIX_TIMESTAMP(time_10k,   'HH:mm:ss') - UNIX_TIMESTAMP(time_5k,   'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE fname = 'Bibo'  
+	UNION ALL SELECT 1.5 AS check_point,  year, (UNIX_TIMESTAMP(time_15k,   'HH:mm:ss') - UNIX_TIMESTAMP(time_10k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE fname = 'Bibo' 
+	UNION ALL SELECT 2.0 AS check_point,  year, (UNIX_TIMESTAMP(time_20k,   'HH:mm:ss') - UNIX_TIMESTAMP(time_15k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE fname = 'Bibo' 
+	UNION ALL SELECT 2.1 AS check_point,  year, (UNIX_TIMESTAMP(time_half,  'HH:mm:ss') - UNIX_TIMESTAMP(time_20k,  'HH:mm:ss'))/1.1 AS pace_5k FROM bm_by_year WHERE fname = 'Bibo' 
+	UNION ALL SELECT 2.5 AS check_point,  year, (UNIX_TIMESTAMP(time_25k,   'HH:mm:ss') - UNIX_TIMESTAMP(time_20k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE fname = 'Bibo' 
+	UNION ALL SELECT 3.0 AS check_point,  year, (UNIX_TIMESTAMP(time_30k,   'HH:mm:ss') - UNIX_TIMESTAMP(time_25k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE fname = 'Bibo' 
+	UNION ALL SELECT 3.5 AS check_point,  year, (UNIX_TIMESTAMP(time_35k,   'HH:mm:ss') - UNIX_TIMESTAMP(time_30k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE fname = 'Bibo' 
+	UNION ALL SELECT 4.0 AS check_point,  year, (UNIX_TIMESTAMP(time_40k,   'HH:mm:ss') - UNIX_TIMESTAMP(time_35k,  'HH:mm:ss'))/5   AS pace_5k FROM bm_by_year WHERE fname = 'Bibo' 
+	UNION ALL SELECT 4.2 AS check_point,  year, (UNIX_TIMESTAMP(time_total, 'HH:mm:ss') - UNIX_TIMESTAMP(time_40k,  'HH:mm:ss'))/2.2 AS pace_5k FROM bm_by_year WHERE fname = 'Bibo'
+
