@@ -163,8 +163,8 @@ while True:
         for row in rows:
             raceData = ""
             raceId = row.find("race_id").text.strip()
-            for column in columns_race:
-                t = row.find(columns_race)
+            for column_race in columns_race:
+                t = row.find(column_race)
                 if t == None:
                     #print("")
                     raceData += ','
