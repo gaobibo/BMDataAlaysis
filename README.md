@@ -1,4 +1,4 @@
-# BMDataAlaysis
+# Boston Marathon Data Analysis
 Tools:
 Hadoop, Hive, HBase, Phoniex, Python, RapidMinder
 
